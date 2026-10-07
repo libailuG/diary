@@ -6,8 +6,7 @@ import traceback
 from pathlib import Path
 
 from PyQt6.QtCore import QUrl, Qt, PYQT_VERSION_STR
-from PyQt6.QtGui import QImage, QTextCursor, QTextDocument
-from PyQt6.QtPrintSupport import QPrinter
+from PyQt6.QtGui import QImage, QTextCursor, QTextDocument, QPdfWriter
 
 from .editor import RichEditor
 from .paths import application_dir
@@ -42,10 +41,10 @@ def check_runtime(report_path):
                 image_id = store.conn.execute("SELECT id FROM attachments").fetchone()[0]
                 loaded = editor.document().resource(QTextDocument.ResourceType.ImageResource, QUrl("diary-image://" + image_id))
                 assert isinstance(loaded, QImage) and not loaded.isNull(), "图片加载失败"
-                printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-                printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                printer.setOutputFileName(str(root / "test.pdf"))
+                printer = QPdfWriter(str(root / "test.pdf"))
+                printer.setResolution(1200)
                 editor.document().print(printer)
+                del printer
                 assert (root / "test.pdf").read_bytes().startswith(b"%PDF"), "PDF 导出失败"
                 store.backup(root / "backup.zip")
                 store.restore(root / "backup.zip")

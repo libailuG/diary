@@ -6,8 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QDate, Qt, QTimer, QByteArray, QUrl
 from PyQt6.QtGui import (QAction, QColor, QDesktopServices, QFont, QImage,
-                         QKeySequence, QTextCharFormat, QTextCursor, QTextDocument)
-from PyQt6.QtPrintSupport import QPrinter
+                         QKeySequence, QTextCharFormat, QTextCursor, QTextDocument, QPdfWriter)
 from PyQt6.QtWidgets import (QApplication, QCalendarWidget, QCheckBox, QColorDialog,
     QComboBox, QDateEdit, QDialog, QDialogButtonBox, QFileDialog, QFontComboBox,
     QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -739,10 +738,11 @@ class MainWindow(QMainWindow):
                     document = DiaryDocument(self.store)
                     document.setDefaultFont(QFont("Microsoft YaHei", 12))
                     document.setHtml(content)
-                    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-                    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                    printer.setOutputFileName(path)
+                    printer = QPdfWriter(path)
+                    printer.setResolution(1200)
+                    printer.setTitle(row['title'])
                     document.print(printer)
+                    del printer
                     if not Path(path).exists() or Path(path).stat().st_size == 0:
                         raise OSError("PDF 文件未成功生成。")
             self.statusBar().showMessage(f"已导出：{path}", 8000)
