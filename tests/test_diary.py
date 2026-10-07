@@ -146,11 +146,13 @@ class DiaryTests(unittest.TestCase):
         self.assertEqual(self.store.get(first)["content_text"], "尚未保存的重要内容")
 
     def test_image_table_paste_and_export(self):
+        print("image/table: create window", flush=True)
         w = self.window()
         w.new_diary()
         image = QImage(160, 100, QImage.Format.Format_RGB32)
         image.fill(Qt.GlobalColor.blue)
         w.editor.put_image(image)
+        print("image/table: insert table", flush=True)
         w.editor.textCursor().insertBlock()
         w.editor.table(2, 2)
         w.editor.insertPlainText("表格内容")
@@ -159,6 +161,7 @@ class DiaryTests(unittest.TestCase):
         w.save_current()
         key = w.current_id
         w.load_diary(key)
+        print("image/table: reload saved content", flush=True)
         self.assertIn("<table", w.editor.toHtml())
         self.assertIn("diary-image://", w.editor.toHtml())
         self.assertEqual(self.store.conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0], 1)
@@ -166,8 +169,10 @@ class DiaryTests(unittest.TestCase):
         mime.setHtml('<p><b>粘贴</b><img src="https://example.invalid/a.jpg"></p>')
         w.editor.moveCursor(QTextCursor.MoveOperation.End)
         w.editor.insertFromMimeData(mime)
+        print("image/table: paste HTML", flush=True)
         self.assertIn("图片未导入", w.editor.toPlainText())
         for kind in ("TXT", "HTML", "PDF"):
+            print(f"image/table: export {kind}", flush=True)
             target = self.root / f"export.{kind.lower()}"
             with patch.object(QFileDialog, "getSaveFileName", return_value=(str(target), "")):
                 w.export_current(kind)
