@@ -25,7 +25,10 @@ jobs:
       - name: Test application
         env:
           QT_QPA_PLATFORM: windows
-        run: python -m unittest discover -v
+        run: |
+          $pythonExe = (Get-Command python).Source
+          $env:PATH = "$env:pythonLocation;$env:pythonLocation\DLLs;$env:SystemRoot\System32;$env:SystemRoot"
+          & $pythonExe -m unittest discover -v
       - name: Build and verify portable executable
         run: python tools/build_portable.py
       - uses: actions/upload-artifact@v7
