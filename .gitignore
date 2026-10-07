@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.build-venv/
 data/
 *.db
 *.db-wal
@@ -19,3 +20,8 @@ backups/
 .pytest_cache/
 .idea/
 .vscode/
+build/
+dist/
+*.spec
+*.zip.sha256
+*.runtime-check.json

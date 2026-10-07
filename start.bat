@@ -1,9 +1,20 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if exist "%USERPROFILE%\miniconda3\envs\pyqt\pythonw.exe" (
-    start "" "%USERPROFILE%\miniconda3\envs\pyqt\pythonw.exe" "%~dp0main.py" %*
+py -3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
+if not errorlevel 1 (
+    py -3 bootstrap.py %*
+    if errorlevel 1 pause
     exit /b
 )
-call conda run --no-capture-output -n pyqt python main.py %*
-if errorlevel 1 pause
+python -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
+if not errorlevel 1 (
+    python bootstrap.py %*
+    if errorlevel 1 pause
+    exit /b
+)
+echo Python 3.10+ was not found.
+echo Install Python from https://www.python.org/downloads/ and enable Add Python to PATH.
+echo Or use the portable Windows package, which needs no Python or Conda.
+pause
+exit /b 1

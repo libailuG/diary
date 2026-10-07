@@ -1,18 +1,41 @@
 # 拾光日记
 
-使用 PyQt6 和 SQLite 的本地富文本日记软件。已适配 Conda 的 `pyqt` 环境。
+使用 PyQt6 和 SQLite 的本地富文本日记软件。支持普通 Python、可选 Conda 环境，以及无需安装 Python 的 Windows x64 便携包。
 
 ## 启动
 
-在 Anaconda Prompt 或支持 Conda 的 PowerShell 中执行：
+### 普通用户：Windows 便携版
+
+获取 `ShiguangDiary-Windows-x64.zip`，**完整解压**到可写目录，然后双击其中的 `ShiguangDiary.exe`。包内自带 Python、PyQt 和 Qt 运行库，无需安装 Conda、Python 或其他依赖，也无需联网。必须保留旁边的 `_internal` 文件夹。
+
+日记保存在 EXE 旁的 `data/`，首次运行时创建。升级时将新版解压到新目录，再迁移完整的 `data/` 或通过备份恢复，不要覆盖已有数据。
+
+### 源码用户：普通 Python（无需 Conda）
+
+先安装 Python 3.10+。Windows 安装时启用 “Add Python to PATH”，然后双击 `start.bat`。启动器自动检测 `py` 或 `python`，在项目内创建 `.venv` 并安装 `requirements.txt`；仅首次安装依赖需要联网。
+
+也可手动执行，Windows：
 
 ```powershell
-conda activate pyqt
-cd C:\play\diary
-python main.py
+cd <项目目录>
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
 ```
 
-本机可直接双击 `start.bat`，使用 `%USERPROFILE%\miniconda3\envs\pyqt\pythonw.exe` 启动，不保留控制台窗口。其他 Conda 安装位置则在 Conda 可用的终端运行 `start.bat` 或 `start.ps1`。程序只依赖 PyQt6 和 Python 标准库，无需联网。
+Linux/macOS 源码启动（需要桌面图形环境）：
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
+
+`.venv` 是当前机器的本地环境，不需要上传或复制到其他电脑；换电脑重新执行启动器即可。
+
+### Conda（可选）
+
+已有 Conda 用户仍可使用 `conda activate pyqt` 后执行 `python main.py`，软件不依赖该环境名称或任何固定安装路径。
 
 需要重建环境时：`conda env create -f environment.yml`；已有 `pyqt` 环境无需重复创建。
 
@@ -48,12 +71,12 @@ python main.py
 
 ## 数据与备份
 
-默认数据保存在项目目录下的 `data/`，本机为 `C:\play\diary\data`。路径以 `main.py` 所在目录为基准，从其他工作目录启动也不会改变保存位置。点击左侧“打开数据目录”查看实际位置。移动整个项目目录即可同时携带日记数据。
+源码运行时默认数据保存在项目目录下的 `data/`；便携版保存在 EXE 旁的 `data/`。从其他工作目录启动也不会改变保存位置，数据不会写入 PyInstaller 的临时解压目录或 `_internal`。点击左侧“打开数据目录”查看实际位置。
 
 也可使用独立的数据目录：
 
 ```powershell
-python main.py --data-dir C:\play\diary\data
+python main.py --data-dir ./data
 ```
 
 目录包含 `diary.db`、`attachments/`、`backups/`、`settings.json` 和 `app.log`。不要单独移动数据库，图片也属于日记数据。迁移请使用完整 ZIP 备份。程序通过锁文件阻止两个窗口同时使用同一数据目录。
@@ -67,9 +90,25 @@ python main.py --data-dir C:\play\diary\data
 `diary/window.py` 管理界面和自动保存；`diary/editor.py` 管理富文本与资源加载；`diary/storage.py` 管理 SQLite、附件和备份。数据库版本为 1，后续修改结构应增加版本迁移。
 
 ```powershell
-conda run --no-capture-output -n pyqt python -m unittest discover -v
+.\.venv\Scripts\python.exe -m unittest discover -v
 ```
 
 测试使用临时目录，不操作真实日记；覆盖富文本自动保存、切换、保存失败防丢失、图片表格、导出、筛选和备份校验恢复。
 
+## 构建 Windows 便携包
+
+在 Windows x64 机器上：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe tools/build_portable.py
+```
+
+输出为 `dist/ShiguangDiary-Windows-x64.zip`，附带 SHA256 和运行检查报告。构建脚本不会读取或打包 `data/`；每次构建使用独立目录，避免删除旧版运行数据。构建后会清除子进程中的 Conda/Python/Qt 环境变量及 PATH 路径，在不同工作目录验证独立 EXE 的富文本、图片、PDF、SQLite 和备份恢复。
+
+Windows 包仅适用于 Windows x64；Linux/macOS 可运行源码，独立包需要在对应系统另行构建。
+
+GitHub 的 `Build Windows portable` 工作流在代码推送和手动触发时运行：安装普通 Python、运行测试、打包并上传可下载的 ZIP Artifact。下载入口为仓库 Actions 页；自动构建不接触本地日记数据。
+
 Qt 富文本能力参考：[QTextEdit 官方文档](https://doc.qt.io/qt-6/qtextedit.html)。
+打包目录处理参考：[PyInstaller runtime information](https://pyinstaller.org/en/stable/runtime-information.html)。
