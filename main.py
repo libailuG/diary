@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from diary.storage import Store
 from diary.window import MainWindow
 from diary.paths import application_dir
+from diary.auth import authenticate
 
 
 def main():
@@ -40,6 +41,8 @@ def main():
     store = None
     previous_hook = sys.excepthook
     try:
+        if not authenticate(root / "settings.json"):
+            return 0
         store = Store(root)
         window = MainWindow(store)
         def exception_hook(kind, value, traceback):

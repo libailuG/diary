@@ -54,7 +54,7 @@ def main():
     if (bundle / "data").exists():
         raise RuntimeError("便携包不应包含 data 目录。")
     shutil.copyfile(root / "README.md", bundle / "README.md")
-    (bundle / "使用说明.txt").write_text("拾光日记 · Windows x64 便携版\n\n解压整个文件夹后，双击 ShiguangDiary.exe。\n无需安装 Python、Conda 或 PyQt。\n请保留 _internal 文件夹。\n日记保存在程序旁的 data 文件夹，首次使用自动创建。\n将软件放在有写入权限的目录，不要直接在 ZIP 内运行。\n更新程序前备份 data；新版解压到新文件夹后迁移完整 data 或恢复 ZIP 备份。\n", encoding="utf-8-sig")
+    (bundle / "使用说明.txt").write_text("拾光日记 · Windows x64 分享版\n\n解压整个文件夹后，双击 ShiguangDiary.exe。\n无需安装 Python、Conda 或 PyQt。\n初始登录密码：123456\n进入后可通过“文件 → 登录密码”修改。\n密码只限制软件界面访问，日记文件本身未加密。\n请保留 _internal 文件夹。\n本分享包不包含日记、附件、备份或个人配置。\n日记保存在程序旁的 data 文件夹，首次使用自动创建。\n将软件放在有写入权限的目录，不要直接在 ZIP 内运行。\n更新程序前备份 data；新版解压到新文件夹后迁移完整 data 或恢复 ZIP 备份。\n", encoding="utf-8-sig")
     staged_archive = stage / "portable.zip"
     with zipfile.ZipFile(staged_archive, "w", zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(bundle.rglob("*")):

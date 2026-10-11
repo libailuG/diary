@@ -149,13 +149,19 @@ class Store:
         if not image.save(str(path), "PNG"):
             raise OSError("图片保存失败。")
         try:
-            with self.conn:
-                self.conn.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?)",
-                                  (key, diary_id, path.relative_to(self.root).as_posix(), original_name, "image/png", now()))
+            self.register_image(diary_id, key, path, original_name)
         except Exception:
             path.unlink(missing_ok=True)
             raise
         return f"diary-image://{key}"
+
+    def register_image(self, diary_id, key, path, original_name):
+        # SQLite stays on its owning GUI thread; workers only prepare files.
+        if not self.get(diary_id):
+            raise ValueError("日记不存在，未插入图片。")
+        with self.conn:
+            self.conn.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?)",
+                              (key, diary_id, path.relative_to(self.root).as_posix(), original_name, "image/png", now()))
 
     def image_path(self, url):
         key = str(url).removeprefix("diary-image://").rstrip("/")
@@ -182,6 +188,13 @@ class Store:
             return {}
 
     def write_settings(self, settings):
+        # Password edits made directly in the file must survive closing the app.
+        from .auth import PASSWORD_KEY, read_settings_file
+        current = read_settings_file(self.settings_path)
+        settings = dict(settings)
+        settings.pop(PASSWORD_KEY, None)
+        if PASSWORD_KEY in current:
+            settings[PASSWORD_KEY] = current[PASSWORD_KEY]
         temp = self.settings_path.with_suffix(".tmp")
         temp.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(temp, self.settings_path)

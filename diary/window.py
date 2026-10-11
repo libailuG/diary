@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (QApplication, QCalendarWidget, QCheckBox, QColorDia
     QToolBar, QVBoxLayout, QWidget)
 
 from .editor import DiaryDocument, RichEditor
+from .auth import PASSWORD_KEY, PasswordDialog, set_password
 
 
 LIGHT = """
@@ -217,6 +218,7 @@ class MainWindow(QMainWindow):
         self.editor = RichEditor(self.store)
         self.editor.document().setDefaultFont(QFont("Microsoft YaHei", 12))
         self.editor.textChanged.connect(self.changed)
+        self.editor.importsChanged.connect(self.image_import_status)
         self.editor.attachmentError.connect(lambda text: self.error("图片导入失败", text))
         right.addWidget(self.editor, 1)
         self.meta_label = QLabel("点击“写一篇日记”开始记录。")
@@ -286,6 +288,7 @@ class MainWindow(QMainWindow):
             export.addAction(self.action(kind, lambda checked=False, k=kind: self.export_current(k)))
         file.addSeparator()
         file.addAction(self.action("备份与恢复…", self.backup_dialog))
+        file.addAction(self.action("登录密码…", self.change_password))
         file.addAction(self.action("退出", self.close, "Ctrl+Q"))
         edit = self.menuBar().addMenu("编辑")
         edit.addAction(self.undo_action)
@@ -340,6 +343,17 @@ class MainWindow(QMainWindow):
         logging.error("%s: %s", title, text)
         QMessageBox.critical(self, title, str(text))
 
+    def change_password(self):
+        dialog = PasswordDialog(self, setup=True, allow_disable=True)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            set_password(self.store.settings_path, dialog.password)
+            self.settings[PASSWORD_KEY] = dialog.password
+            self.statusBar().showMessage("登录密码已更新，下次启动生效。" if dialog.password else "登录密码验证已关闭。", 8000)
+        except Exception as exc:
+            self.error("密码设置失败", exc)
+
     def changed(self, *args):
         if self.loading or not self.current_id or self.editor.isReadOnly():
             return
@@ -348,8 +362,17 @@ class MainWindow(QMainWindow):
         self.word_label.setText(f"{len(''.join(self.editor.toPlainText().split()))} 字")
         self.autosave.start()
 
+    def image_import_status(self, count):
+        if count:
+            self.save_label.setText(f"正在导入 {count} 张图片… 可继续输入")
+        else:
+            self.changed()
+
     def save_current(self, checked=False, refresh=True):
         self.autosave.stop()
+        if self.editor.pending_images:
+            self.save_label.setText("图片导入中，请稍后再保存、切换或关闭")
+            return False
         if not self.current_id or not self.dirty:
             return True
         try:
@@ -563,7 +586,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "插入图片", "", "图片 (*.png *.jpg *.jpeg *.bmp *.webp)")
         if path:
             try:
-                self.editor.put_image(QImage(path), Path(path).name)
+                self.editor.import_image(path, Path(path).name)
             except Exception as exc:
                 self.error("图片导入失败", exc)
 
@@ -735,7 +758,7 @@ class MainWindow(QMainWindow):
                 if kind == "HTML":
                     Path(path).write_text(self.store.portable_html(content), encoding="utf-8")
                 else:
-                    document = DiaryDocument(self.store)
+                    document = DiaryDocument(self.store, preview_images=False)
                     document.setDefaultFont(QFont("Microsoft YaHei", 12))
                     document.setHtml(content)
                     printer = QPdfWriter(path)

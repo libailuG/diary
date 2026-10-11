@@ -25,3 +25,7 @@ dist/
 *.spec
 *.zip.sha256
 *.runtime-check.json
+/ShiguangDiary.exe
+/_internal/
+settings.json
+settings.tmp

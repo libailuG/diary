@@ -3,15 +3,18 @@ import json
 import sys
 import tempfile
 import traceback
+import time
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, Qt, PYQT_VERSION_STR
+from PyQt6.QtCore import QUrl, Qt, PYQT_VERSION_STR, QCoreApplication
 from PyQt6.QtGui import QImage, QTextCursor, QTextDocument, QPdfWriter
 
 from .editor import RichEditor
 from .paths import application_dir
 from .storage import Store
 from .window import MainWindow
+from .auth import PasswordDialog, set_password, read_settings_file, PASSWORD_KEY
+from PyQt6.QtWidgets import QDialog
 
 
 def check_runtime(report_path):
@@ -20,6 +23,16 @@ def check_runtime(report_path):
     try:
         with tempfile.TemporaryDirectory(prefix="diary-runtime-check-") as directory:
             root = Path(directory)
+            auth_path = root / "login-check.json"
+            set_password(auth_path, "运行验证密码")
+            login = PasswordDialog(expected=read_settings_file(auth_path)[PASSWORD_KEY])
+            login.entry.setText("错误密码")
+            login.accept()
+            assert login.result() == QDialog.DialogCode.Rejected
+            login.entry.setText("运行验证密码")
+            login.accept()
+            assert login.result() == QDialog.DialogCode.Accepted
+            login.deleteLater()
             store = Store(root / "data")
             try:
                 key = store.create("2026-01-01", "运行检查")
@@ -34,7 +47,12 @@ def check_runtime(report_path):
                 editor.insertPlainText("\n")
                 image = QImage(80, 60, QImage.Format.Format_RGB32)
                 image.fill(Qt.GlobalColor.blue)
-                editor.put_image(image)
+                editor.import_image(image)
+                deadline = time.monotonic() + 15
+                while editor.pending_images and time.monotonic() < deadline:
+                    QCoreApplication.processEvents()
+                    time.sleep(0.01)
+                assert not editor.pending_images and "diary-image://" in editor.toHtml(), "后台图片导入失败"
                 store.save(key, "运行检查", "2026-01-01", editor.toHtml(), editor.toPlainText(), ["测试"])
                 editor.setHtml(store.get(key)["content_html"])
                 assert "中文运行检查" in editor.toPlainText()
@@ -55,7 +73,7 @@ def check_runtime(report_path):
                 window.close()
                 window.deleteLater()
                 editor.deleteLater()
-                report.update(ok=True, checks=["main_window", "rich_text", "image_resource", "pdf", "sqlite", "backup_restore"])
+                report.update(ok=True, checks=["login_password", "main_window", "rich_text", "background_image_import", "image_resource", "pdf", "sqlite", "backup_restore"])
             finally:
                 store.close()
     except Exception:

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import unittest
 import zipfile
 from pathlib import Path
@@ -10,13 +11,15 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "windows" if os.name == "nt" else "offscreen")
 
-from PyQt6.QtCore import QDate, QMimeData, Qt
-from PyQt6.QtGui import QImage, QTextCursor
+from PyQt6.QtCore import QDate, QMimeData, Qt, QTimer, QUrl
+from PyQt6.QtGui import QImage, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from PyQt6.QtTest import QTest
 
 from diary.storage import Store
 from diary.window import MainWindow
+from diary.editor import DiaryDocument
+from diary.images import ImageImport, PREVIEW_LIMIT
 
 APP = QApplication.instance() or QApplication([])
 
@@ -47,6 +50,13 @@ class DiaryTests(unittest.TestCase):
         window.settings["auto_backup"] = False
         self.windows.append(window)
         return window
+
+    def wait_images(self, editor):
+        for _ in range(1000):
+            if not editor.pending_images:
+                return
+            QTest.qWait(10)
+        self.fail("图片导入超时")
 
     def test_repository_search_tags_and_trash(self):
         key = self.store.create("2026-10-07")
@@ -169,6 +179,7 @@ class DiaryTests(unittest.TestCase):
         mime.setHtml('<p><b>粘贴</b><img src="https://example.invalid/a.jpg"></p>')
         w.editor.moveCursor(QTextCursor.MoveOperation.End)
         w.editor.insertFromMimeData(mime)
+        self.wait_images(w.editor)
         print("image/table: paste HTML", flush=True)
         self.assertIn("图片未导入", w.editor.toPlainText())
         for kind in ("TXT", "HTML", "PDF"):
@@ -194,6 +205,7 @@ class DiaryTests(unittest.TestCase):
         self.assertTrue(w.editor.canInsertFromMimeData(mime))
         QApplication.clipboard().setMimeData(mime)
         w.editor.paste()
+        self.wait_images(w.editor)
         self.assertIn("diary-image://", w.editor.toHtml())
         w.settings["auto_backup"] = True
         w.daily_backup()
@@ -203,6 +215,102 @@ class DiaryTests(unittest.TestCase):
         w.editor.insertPlainText("新增内容")
         w.daily_backup()
         self.assertEqual(backups[0].read_bytes(), original)
+        self.assertTrue(w.save_current())
+        self.assertEqual(self.errors, [])
+
+    def test_image_import_keeps_gui_responsive_and_prevents_switch(self):
+        w = self.window()
+        w.new_diary()
+        key = w.current_id
+        release = threading.Event()
+        entered = threading.Event()
+        original = ImageImport.prepare
+
+        def slow_prepare(job, source):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("测试未释放后台任务")
+            return original(job, source)
+
+        image = QImage(100, 80, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.red)
+        ticks = []
+        timer = QTimer()
+        timer.setInterval(10)
+        timer.timeout.connect(lambda: ticks.append(1))
+        timer.start()
+        try:
+            with patch.object(ImageImport, "prepare", slow_prepare):
+                w.editor.import_image(image)
+                self.assertTrue(entered.wait(2))
+                QTest.qWait(80)
+                self.assertGreaterEqual(len(ticks), 2)
+                w.editor.insertPlainText("导入时继续写作")
+                self.assertFalse(w.save_current())
+                w.new_diary()
+                self.assertEqual(w.current_id, key)
+                self.assertFalse(w.close())
+                release.set()
+                self.wait_images(w.editor)
+        finally:
+            release.set()
+            timer.stop()
+            self.wait_images(w.editor)
+        self.assertIn("导入时继续写作", w.editor.toPlainText())
+        self.assertIn("diary-image://", w.editor.toHtml())
+        self.assertTrue(w.save_current())
+        self.assertEqual(self.errors, [])
+
+    def test_large_file_preview_preserves_original_and_pdf_resource(self):
+        w = self.window()
+        w.new_diary()
+        image = QImage(4000, 3000, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.blue)
+        source = self.root / "大图.jpg"
+        self.assertTrue(image.save(str(source), "JPG"))
+        with patch.object(QFileDialog, "getOpenFileName", return_value=(str(source), "")):
+            w.insert_image()
+        self.wait_images(w.editor)
+        self.assertTrue(w.save_current())
+        attachment = self.store.conn.execute("SELECT id FROM attachments").fetchone()[0]
+        url = QUrl("diary-image://" + attachment)
+        original = QImage(str(self.store.image_path(url.toString())))
+        self.assertEqual((original.width(), original.height()), (4000, 3000))
+        resource = w.editor.document().resource(QTextDocument.ResourceType.ImageResource, url)
+        self.assertLessEqual(max(resource.width(), resource.height()), PREVIEW_LIMIT)
+        w.load_diary(w.current_id)
+        resource = w.editor.document().resource(QTextDocument.ResourceType.ImageResource, url)
+        self.assertLessEqual(max(resource.width(), resource.height()), PREVIEW_LIMIT)
+        export_doc = DiaryDocument(self.store, preview_images=False)
+        resource = export_doc.resource(QTextDocument.ResourceType.ImageResource, url)
+        self.assertEqual((resource.width(), resource.height()), (4000, 3000))
+        self.assertEqual(self.errors, [])
+
+    def test_invalid_background_image_reports_error_without_attachment(self):
+        w = self.window()
+        w.new_diary()
+        with self.assertLogs(level="ERROR"):
+            w.editor.import_image(self.root / "missing.png")
+            self.wait_images(w.editor)
+        self.assertEqual(len(self.errors), 1)
+        self.assertEqual(self.store.conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0], 0)
+
+    def test_html_images_import_in_background_and_register_on_gui_thread(self):
+        w = self.window()
+        w.new_diary()
+        source = self.root / "本地图片.png"
+        image = QImage(200, 100, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.green)
+        self.assertTrue(image.save(str(source), "PNG"))
+        import base64
+        data = base64.b64encode(source.read_bytes()).decode("ascii")
+        mime = QMimeData()
+        mime.setHtml(f'<p><b>图文粘贴</b><img src="{QUrl.fromLocalFile(str(source)).toString()}"><img src="data:image/png;base64,{data}"></p>')
+        w.editor.insertFromMimeData(mime)
+        self.assertEqual(w.editor.pending_images, 1)
+        self.wait_images(w.editor)
+        self.assertEqual(self.store.conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0], 2)
+        self.assertIn("图文粘贴", w.editor.toPlainText())
         self.assertTrue(w.save_current())
         self.assertEqual(self.errors, [])
 
